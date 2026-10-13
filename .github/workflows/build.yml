@@ -11,10 +11,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install PyInstaller
-        run: python -m pip install pyinstaller
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller qrcode pillow
       - name: Build EXE
-        run: python -m PyInstaller -F -w --clean --name "BatchQRGenerator" batch_qr_maker.pyw
+        run: |
+          python -m PyInstaller -F -w --clean --name "BatchQRGenerator" batch_qr_maker.pyw
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
