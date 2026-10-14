@@ -32,14 +32,16 @@ class App(tk.Tk):
         )
         self.canvas.pack()
 
-        # 展开/收起按钮（浮在二维码右下角）
+        # 拖拽移动支持（无边框模式下用）
+        self.canvas.bind("<Button-1>", self.start_drag)
+        self.canvas.bind("<B1-Motion>", self.on_drag)
+
+        # 展开/收起按钮（紧贴在二维码右下外侧）
         self.toggle_btn = tk.Button(
             self, text="▼", width=2, command=self.toggle_panel,
             bg="#f0f0f0", relief="flat", font=("Arial", 8), cursor="hand2"
         )
-        self.toggle_btn.place(
-            in_=self.canvas, relx=1.0, rely=1.0, anchor="se", x=-1, y=-1
-        )
+        self.toggle_btn.place(x=0, y=0, anchor="nw")
 
         # ---------- 控制面板 ----------
         self.panel = tk.Frame(self, padx=6, pady=4)
@@ -100,19 +102,52 @@ class App(tk.Tk):
 
     # ---------- 收起/展开 ----------
     def toggle_panel(self):
+        # 记录 canvas 当前屏幕位置，切换后恢复，防止跳动
+        self._saved_cx = self.canvas.winfo_rootx()
+        self._saved_cy = self.canvas.winfo_rooty()
+
         if self.expanded.get():
+            # 收起：隐藏面板 + 去掉标题栏
             self.panel.pack_forget()
-            self.toggle_btn.config(text="▲")
+            self.overrideredirect(True)
             self.expanded.set(False)
+            self.toggle_btn.config(text="▲")
         else:
+            # 展开：恢复标题栏 + 显示面板
+            self.overrideredirect(False)
             self.panel.pack(fill="x", padx=6, pady=4, side="bottom")
-            self.toggle_btn.config(text="▼")
             self.expanded.set(True)
-        self.after(10, self.fit_window)
+            self.toggle_btn.config(text="▼")
+
+        self.after(20, self.restore_and_fit)
+
+    def restore_and_fit(self):
+        """恢复 canvas 在屏幕上的绝对位置，并调整窗口大小。"""
+        self.update_idletasks()
+        self.fit_window()
+        if hasattr(self, "_saved_cx"):
+            new_cx = self.canvas.winfo_rootx()
+            new_cy = self.canvas.winfo_rooty()
+            dx = self._saved_cx - new_cx
+            dy = self._saved_cy - new_cy
+            if dx != 0 or dy != 0:
+                x = self.winfo_x() + dx
+                y = self.winfo_y() + dy
+                self.geometry(f"+{x}+{y}")
 
     def on_size_change(self):
         self.draw()
         self.fit_window()
+
+    # ---------- 拖拽移动（无边框模式下） ----------
+    def start_drag(self, event):
+        self._drag_x = event.x_root - self.winfo_x()
+        self._drag_y = event.y_root - self.winfo_y()
+
+    def on_drag(self, event):
+        self.geometry(
+            f"+{event.x_root - self._drag_x}+{event.y_root - self._drag_y}"
+        )
 
     # ---------- 窗口行为 ----------
     def apply_top(self):
@@ -152,6 +187,7 @@ class App(tk.Tk):
         self.canvas.delete("all")
         if not self.modules:
             self.canvas.config(width=120, height=120)
+            self.position_btn()
             return
 
         n = len(self.modules)
@@ -159,10 +195,10 @@ class App(tk.Tk):
         cell = max(2, int(self.display_var.get()))
         size = total * cell
 
-        # Canvas 精确等于二维码像素，一分不多
+        # Canvas 精确等于二维码像素
         self.canvas.config(width=size, height=size)
 
-        # 白底（与 Canvas 背景色一致，保险）
+        # 白底
         self.canvas.create_rectangle(
             0, 0, size, size, fill="white", outline=""
         )
@@ -177,21 +213,45 @@ class App(tk.Tk):
                         fill="black", outline=""
                     )
 
+        self.position_btn()
+
+    # ---------- 按钮位置：紧贴二维码右下外侧 ----------
+    def position_btn(self):
+        """将展开/收起按钮放在 Canvas 右下角，不遮挡二维码内容。"""
+        self.update_idletasks()
+        qr_w = self.canvas.winfo_width()
+        qr_h = self.canvas.winfo_height()
+        self.toggle_btn.place(x=qr_w, y=qr_h, anchor="nw")
+
     # ---------- 窗口精确贴合内容 ----------
     def fit_window(self):
         self.update_idletasks()
-        # 取窗口当前所有可见控件的推荐大小，无额外留白
-        w = self.winfo_reqwidth()
-        h = self.winfo_reqheight()
 
-        # 保留当前窗口位置
+        qr_w = self.canvas.winfo_width()
+        qr_h = self.canvas.winfo_height()
+        btn_w = self.toggle_btn.winfo_reqwidth()
+        btn_h = self.toggle_btn.winfo_reqheight()
+
+        if self.expanded.get():
+            # 有标题栏：让 tkinter 自然计算整体请求大小，再确保装得下按钮
+            w = self.winfo_reqwidth()
+            h = self.winfo_reqheight()
+            if qr_w + btn_w > w:
+                w = qr_w + btn_w
+            if qr_h + btn_h > h:
+                h = qr_h + btn_h
+        else:
+            # 无边框：窗口整体 == 客户区，直接按内容精确设置
+            w = qr_w + btn_w
+            h = qr_h + btn_h
+
+        # 保留当前屏幕位置
         geo = self.geometry()
         pos = ""
         if "+" in geo:
             pos = "+" + geo.split("+", 1)[1]
 
         self.geometry(f"{w}x{h}{pos}")
-        # 取消最小限制，允许完全贴合
         self.minsize(1, 1)
 
     # ---------- 保存 ----------
