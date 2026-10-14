@@ -14,54 +14,79 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("批次号二维码生成器")
-        self.geometry("560x680")
+        self.geometry("420x520")
+        self.minsize(320, 420)
         self.modules = None          # qrcode 生成的二维布尔矩阵
-        self.box_size = 10           # 每个模块的显示像素
         self.quiet = 4               # 静区模块数
 
         # 状态变量
         self.topmost_var = tk.BooleanVar(value=True)
         self.fs_var = tk.BooleanVar(value=False)
-        self.scale_var = tk.IntVar(value=10)
+        self.scale_var = tk.IntVar(value=10)      # 导出倍率
+        self.display_var = tk.IntVar(value=6)     # 显示模块像素（控制大小）
 
-        # ---------- 输入区 ----------
-        top = tk.Frame(self)
-        top.pack(fill="x", padx=12, pady=10)
-        tk.Label(top, text="批次号：", font=("Microsoft YaHei UI", 11)).pack(side="left")
-        self.entry = tk.Entry(top, font=("Microsoft YaHei UI", 12))
-        self.entry.pack(side="left", fill="x", expand=True)
+        # 配置网格权重，让画布可随窗口缩放
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
+        # ---------- 二维码画布（上方，自适应） ----------
+        canvas_frame = tk.Frame(self, bg="white", highlightthickness=1,
+                                highlightbackground="#999")
+        canvas_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 5))
+        canvas_frame.columnconfigure(0, weight=1)
+        canvas_frame.rowconfigure(0, weight=1)
+
+        self.canvas = tk.Canvas(canvas_frame, bg="white", highlightthickness=0)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.canvas.bind("<Configure>", lambda e: self.draw())
+
+        # ---------- 控制面板（下方） ----------
+        panel = tk.Frame(self)
+        panel.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
+
+        # 批次号输入
+        row1 = tk.Frame(panel)
+        row1.pack(fill="x", pady=(4, 2))
+        tk.Label(row1, text="批次号：", font=("Microsoft YaHei UI", 10)).pack(side="left")
+        self.entry = tk.Entry(row1, font=("Microsoft YaHei UI", 11))
+        self.entry.pack(side="left", fill="x", expand=True, padx=(4, 0))
         self.entry.bind("<Return>", lambda e: self.gen())
         self.entry.focus_set()
 
-        # ---------- 选项区 ----------
-        opt = tk.Frame(self)
-        opt.pack(fill="x", padx=12)
-        tk.Checkbutton(opt, text="置顶", variable=self.topmost_var,
-                       command=self.apply_top).pack(side="left")
-        tk.Checkbutton(opt, text="全屏", variable=self.fs_var,
-                       command=self.apply_fs).pack(side="left", padx=12)
-        tk.Label(opt, text="导出倍率：").pack(side="left", padx=(20, 4))
-        ttk.Spinbox(opt, from_=4, to=40, width=5, textvariable=self.scale_var).pack(side="left")
+        # 大小 + 导出倍率
+        row2 = tk.Frame(panel)
+        row2.pack(fill="x", pady=4)
+        tk.Label(row2, text="显示大小：").pack(side="left")
+        self.size_spin = ttk.Spinbox(row2, from_=3, to=20, width=4,
+                                     textvariable=self.display_var,
+                                     command=self.draw)
+        self.size_spin.pack(side="left")
+        tk.Label(row2, text="导出倍率：").pack(side="left", padx=(12, 0))
+        ttk.Spinbox(row2, from_=4, to=40, width=4,
+                    textvariable=self.scale_var).pack(side="left")
 
-        # ---------- 按钮区 ----------
-        btns = tk.Frame(self)
-        btns.pack(fill="x", padx=12, pady=8)
-        tk.Button(btns, text="生成二维码", command=self.gen,
-                  width=12).pack(side="left")
-        tk.Button(btns, text="保存图片", command=self.save,
-                  width=12).pack(side="left", padx=10)
-        tk.Button(btns, text="清空", command=self.clear,
+        # 选项
+        row3 = tk.Frame(panel)
+        row3.pack(fill="x", pady=2)
+        tk.Checkbutton(row3, text="置顶", variable=self.topmost_var,
+                       command=self.apply_top).pack(side="left")
+        tk.Checkbutton(row3, text="全屏", variable=self.fs_var,
+                       command=self.apply_fs).pack(side="left", padx=10)
+
+        # 按钮
+        row4 = tk.Frame(panel)
+        row4.pack(fill="x", pady=(4, 2))
+        tk.Button(row4, text="生成二维码", command=self.gen,
+                  width=11).pack(side="left")
+        tk.Button(row4, text="保存图片", command=self.save,
+                  width=11).pack(side="left", padx=8)
+        tk.Button(row4, text="清空", command=self.clear,
                   width=8).pack(side="left")
 
-        # ---------- 画布 ----------
-        self.canvas = tk.Canvas(self, bg="white", highlightthickness=1,
-                                highlightbackground="#999")
-        self.canvas.pack(fill="both", expand=True, padx=12, pady=10)
-
-        # ---------- 状态栏 ----------
-        self.status = tk.Label(self, text="输入批次号后按回车或点击生成；默认窗口置顶。",
-                               anchor="w")
-        self.status.pack(fill="x", padx=12, pady=(0, 8))
+        # 状态栏
+        self.status = tk.Label(panel, text="输入批次号后按回车生成；默认置顶。",
+                               anchor="w", fg="#555")
+        self.status.pack(fill="x", pady=(4, 0))
 
         self.apply_top()
 
@@ -81,14 +106,14 @@ class App(tk.Tk):
             return
         try:
             qr = qrcode.QRCode(
-                version=None,                       # 自动选择版本
+                version=None,
                 error_correction=qrcode.constants.ERROR_CORRECT_M,
-                box_size=1,                         # 后面自己画，这里设为 1
+                box_size=1,
                 border=self.quiet,
             )
             qr.add_data(s)
             qr.make(fit=True)
-            self.modules = qr.modules               # 二维布尔列表
+            self.modules = qr.modules
             self.draw()
             self.status.config(
                 text=f"已生成：{len(s)} 个字符，版本 V{qr.version}，"
@@ -97,25 +122,34 @@ class App(tk.Tk):
         except Exception as e:
             messagebox.showerror("生成失败", str(e))
 
-    # ---------- 绘制 ----------
-    def draw(self):
+    # ---------- 绘制（自适应画布） ----------
+    def draw(self, event=None):
         self.canvas.delete("all")
         if not self.modules:
             return
-        self.update_idletasks()
-        cw = max(self.canvas.winfo_width(), 200)
-        ch = max(self.canvas.winfo_height(), 200)
+
+        cw = self.canvas.winfo_width()
+        ch = self.canvas.winfo_height()
+        if cw < 10 or ch < 10:
+            return
 
         n = len(self.modules)
         total = n + 2 * self.quiet
-        cell = max(1, min(cw, ch) // total)
+
+        # 用户指定的模块像素，但不超过画布可容纳的最大值
+        user_cell = max(3, int(self.display_var.get()))
+        max_cell = min(cw, ch) // total
+        cell = min(user_cell, max_cell)
+        if cell < 1:
+            cell = 1
+
         ox = (cw - cell * total) // 2
         oy = (ch - cell * total) // 2
 
         # 白底
         self.canvas.create_rectangle(ox, oy, ox + cell * total,
                                      oy + cell * total, fill="white", outline="")
-        # 画黑块
+        # 黑块
         for r, row in enumerate(self.modules):
             for c, val in enumerate(row):
                 if val:
@@ -138,10 +172,10 @@ class App(tk.Tk):
         if not fn:
             return
         try:
-            scale = int(self.scale_var.get())
+            scale = max(1, int(self.scale_var.get()))
             n = len(self.modules)
             total_px = (n + 2 * self.quiet) * scale
-            img = Image.new("1", (total_px, total_px), 1)   # 1-bit, 白底
+            img = Image.new("1", (total_px, total_px), 1)
             px = img.load()
             for r, row in enumerate(self.modules):
                 for c, val in enumerate(row):
