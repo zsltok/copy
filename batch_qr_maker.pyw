@@ -37,11 +37,11 @@ class App(tk.Tk):
         self.canvas.bind("<Button-1>", self.start_drag)
         self.canvas.bind("<B1-Motion>", self.on_drag)
 
-        # ---------- 展开/收起按钮 ----------
+        # ---------- 展开/收起按钮（白色融入背景） ----------
         self.toggle_btn = tk.Button(
-            self, text="▼", width=2, command=self.toggle_panel,
-            bg="#e0e0e0", relief="flat", font=("Arial", 8), cursor="hand2",
-            highlightthickness=0, bd=0
+            self, text="▼", width=1, command=self.toggle_panel,
+            bg="white", relief="flat", font=("Arial", 7), cursor="hand2",
+            highlightthickness=0, bd=0, padx=0, pady=0
         )
 
         # ---------- 控制面板 ----------
@@ -198,41 +198,39 @@ class App(tk.Tk):
                         fill="black", outline=""
                     )
 
-    # ---------- 精确布局：按钮始终可见、不遮挡 ----------
+    # ---------- 精确布局 + 锁定大小 ----------
     def layout_and_fit(self):
         self.update_idletasks()
 
-        # Canvas 像素大小
         cw = self.canvas.winfo_width()
         ch = self.canvas.winfo_height()
-
-        # 按钮请求大小
         bw = self.toggle_btn.winfo_reqwidth()
         bh = self.toggle_btn.winfo_reqheight()
 
         # Canvas 固定在 (0, 0)
         self.canvas.place(x=0, y=0)
 
-        # 按钮放在 Canvas 右下角外侧（紧邻，0 像素重叠）
-        self.toggle_btn.place(x=cw, y=ch, anchor="nw")
-        self.toggle_btn.lift()  # 强制提到最上层，防止被覆盖
+        # 按钮往 Canvas 内偏移 4 像素，更紧贴二维码
+        # 仍在静区范围内，不遮挡黑色模块
+        offset = 4
+        btn_x = max(0, cw - offset)
+        btn_y = max(0, ch - offset)
+        self.toggle_btn.place(x=btn_x, y=btn_y, anchor="nw")
+        self.toggle_btn.lift()  # 强制置顶，永不消失
 
         if self.expanded.get():
-            # 面板放在 Canvas 和按钮下方
-            panel_y = ch + bh
+            # 面板放在按钮下方
+            panel_y = btn_y + bh
             self.panel.place(x=0, y=panel_y)
             self.panel.lift()
-
             pw = self.panel.winfo_reqwidth()
             ph = self.panel.winfo_reqheight()
-
-            # 窗口宽取较大值（面板可能比 Canvas+按钮宽）
-            w = max(cw + bw, pw)
+            w = max(cw, pw)
             h = panel_y + ph
         else:
             self.panel.place_forget()
-            w = cw + bw
-            h = ch + bh
+            w = max(cw, btn_x + bw)
+            h = max(ch, btn_y + bh)
 
         # 保留当前屏幕位置
         geo = self.geometry()
@@ -241,8 +239,9 @@ class App(tk.Tk):
             pos = "+" + geo.split("+", 1)[1]
 
         self.geometry(f"{w}x{h}{pos}")
-        # 最小限制设为内容大小，防止用户手动缩到按钮看不见
-        self.minsize(cw + bw, ch + bh)
+        # 完全锁定窗口大小，彻底杜绝用户拉大产生的白边
+        self.minsize(w, h)
+        self.maxsize(w, h)
 
     # ---------- 保存 ----------
     def save(self):
