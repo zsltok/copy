@@ -2,7 +2,7 @@
 """
 批次号二维码生成器
 使用标准 qrcode 库，确保生成的二维码可被正常扫描。
-打包命令：pyinstaller -F -w batch_qr_maker.pyw
+目录模式打包命令：pyinstaller -w batch_qr_maker.pyw
 """
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -14,81 +14,129 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("批次号二维码生成器")
-        self.geometry("420x520")
-        self.minsize(320, 420)
-        self.modules = None          # qrcode 生成的二维布尔矩阵
+        self.geometry("200x200")
+        self.configure(bg="white")
+
+        self.modules = None          # qrcode 二维布尔矩阵
         self.quiet = 4               # 静区模块数
 
         # 状态变量
         self.topmost_var = tk.BooleanVar(value=True)
         self.fs_var = tk.BooleanVar(value=False)
-        self.scale_var = tk.IntVar(value=10)      # 导出倍率
-        self.display_var = tk.IntVar(value=6)     # 显示模块像素（控制大小）
+        self.scale_var = tk.IntVar(value=10)       # 导出倍率
+        self.display_var = tk.IntVar(value=6)      # 显示模块像素
+        self.expanded = tk.BooleanVar(value=True)  # 面板展开状态
 
-        # 配置网格权重，让画布可随窗口缩放
-        self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
+        # ---------- Canvas（二维码画布） ----------
+        self.canvas = tk.Canvas(
+            self, bg="white", highlightthickness=0, bd=0
+        )
+        self.canvas.place(x=0, y=0)
 
-        # ---------- 二维码画布（上方，自适应） ----------
-        canvas_frame = tk.Frame(self, bg="white", highlightthickness=1,
-                                highlightbackground="#999")
-        canvas_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 5))
-        canvas_frame.columnconfigure(0, weight=1)
-        canvas_frame.rowconfigure(0, weight=1)
+        # 拖拽支持（无边框模式下按住二维码拖动）
+        self.canvas.bind("<Button-1>", self.start_drag)
+        self.canvas.bind("<B1-Motion>", self.on_drag)
 
-        self.canvas = tk.Canvas(canvas_frame, bg="white", highlightthickness=0)
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-        self.canvas.bind("<Configure>", lambda e: self.draw())
+        # ---------- 展开/收起按钮（白色融入背景） ----------
+        self.toggle_btn = tk.Button(
+            self, text="▼", width=1, command=self.toggle_panel,
+            bg="white", relief="flat", font=("Arial", 7), cursor="hand2",
+            highlightthickness=0, bd=0, padx=0, pady=0
+        )
 
-        # ---------- 控制面板（下方） ----------
-        panel = tk.Frame(self)
-        panel.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
+        # ---------- 控制面板 ----------
+        self.panel = tk.Frame(self, padx=6, pady=4, bg=self.cget("bg"))
+        self.build_panel()
 
-        # 批次号输入
-        row1 = tk.Frame(panel)
-        row1.pack(fill="x", pady=(4, 2))
-        tk.Label(row1, text="批次号：", font=("Microsoft YaHei UI", 10)).pack(side="left")
+        # 初始化
+        self.draw()
+        self.layout_and_fit()
+        self.apply_top()
+
+    # ---------- 构建面板 ----------
+    def build_panel(self):
+        row1 = tk.Frame(self.panel, bg=self.panel.cget("bg"))
+        row1.pack(fill="x", pady=1)
+        tk.Label(row1, text="批次号：", font=("Microsoft YaHei UI", 10),
+                 bg=row1.cget("bg")).pack(side="left")
         self.entry = tk.Entry(row1, font=("Microsoft YaHei UI", 11))
         self.entry.pack(side="left", fill="x", expand=True, padx=(4, 0))
         self.entry.bind("<Return>", lambda e: self.gen())
         self.entry.focus_set()
 
-        # 大小 + 导出倍率
-        row2 = tk.Frame(panel)
-        row2.pack(fill="x", pady=4)
-        tk.Label(row2, text="显示大小：").pack(side="left")
-        self.size_spin = ttk.Spinbox(row2, from_=3, to=20, width=4,
-                                     textvariable=self.display_var,
-                                     command=self.draw)
-        self.size_spin.pack(side="left")
-        tk.Label(row2, text="导出倍率：").pack(side="left", padx=(12, 0))
+        row2 = tk.Frame(self.panel, bg=self.panel.cget("bg"))
+        row2.pack(fill="x", pady=2)
+        tk.Label(row2, text="显示大小：", bg=row2.cget("bg")).pack(side="left")
+        ttk.Spinbox(row2, from_=2, to=30, width=4,
+                    textvariable=self.display_var,
+                    command=self.on_size_change).pack(side="left")
+        tk.Label(row2, text="导出倍率：", bg=row2.cget("bg")).pack(side="left", padx=(10, 0))
         ttk.Spinbox(row2, from_=4, to=40, width=4,
                     textvariable=self.scale_var).pack(side="left")
 
-        # 选项
-        row3 = tk.Frame(panel)
-        row3.pack(fill="x", pady=2)
+        row3 = tk.Frame(self.panel, bg=self.panel.cget("bg"))
+        row3.pack(fill="x", pady=1)
         tk.Checkbutton(row3, text="置顶", variable=self.topmost_var,
-                       command=self.apply_top).pack(side="left")
+                       command=self.apply_top, bg=row3.cget("bg")).pack(side="left")
         tk.Checkbutton(row3, text="全屏", variable=self.fs_var,
-                       command=self.apply_fs).pack(side="left", padx=10)
+                       command=self.apply_fs, bg=row3.cget("bg")).pack(side="left", padx=8)
 
-        # 按钮
-        row4 = tk.Frame(panel)
-        row4.pack(fill="x", pady=(4, 2))
+        row4 = tk.Frame(self.panel, bg=self.panel.cget("bg"))
+        row4.pack(fill="x", pady=(2, 0))
         tk.Button(row4, text="生成二维码", command=self.gen,
-                  width=11).pack(side="left")
+                  width=10).pack(side="left")
         tk.Button(row4, text="保存图片", command=self.save,
-                  width=11).pack(side="left", padx=8)
+                  width=10).pack(side="left", padx=6)
         tk.Button(row4, text="清空", command=self.clear,
                   width=8).pack(side="left")
 
-        # 状态栏
-        self.status = tk.Label(panel, text="输入批次号后按回车生成；默认置顶。",
-                               anchor="w", fg="#555")
-        self.status.pack(fill="x", pady=(4, 0))
+        self.status = tk.Label(
+            self.panel, text="请输入批次号", anchor="w",
+            fg="#666", font=("", 9), bg=self.panel.cget("bg")
+        )
+        self.status.pack(fill="x", pady=(3, 0))
 
-        self.apply_top()
+    # ---------- 收起/展开 ----------
+    def toggle_panel(self):
+        # 记录二维码当前屏幕位置，切换后恢复，防止跳动
+        old_x = self.canvas.winfo_rootx()
+        old_y = self.canvas.winfo_rooty()
+
+        if self.expanded.get():
+            self.panel.place_forget()
+            self.overrideredirect(True)
+            self.expanded.set(False)
+            self.toggle_btn.config(text="▲")
+        else:
+            self.overrideredirect(False)
+            self.expanded.set(True)
+            self.toggle_btn.config(text="▼")
+
+        self.after(30, lambda: self.restore_pos(old_x, old_y))
+
+    def restore_pos(self, old_x, old_y):
+        self.update_idletasks()
+        new_x = self.canvas.winfo_rootx()
+        new_y = self.canvas.winfo_rooty()
+        dx = old_x - new_x
+        dy = old_y - new_y
+        if dx != 0 or dy != 0:
+            self.geometry(f"+{self.winfo_x() + dx}+{self.winfo_y() + dy}")
+        self.layout_and_fit()
+
+    def on_size_change(self):
+        self.draw()
+        self.layout_and_fit()
+
+    # ---------- 拖拽（无边框模式） ----------
+    def start_drag(self, event):
+        self._drag_x = event.x_root - self.winfo_x()
+        self._drag_y = event.y_root - self.winfo_y()
+
+    def on_drag(self, event):
+        self.geometry(
+            f"+{event.x_root - self._drag_x}+{event.y_root - self._drag_y}"
+        )
 
     # ---------- 窗口行为 ----------
     def apply_top(self):
@@ -116,54 +164,93 @@ class App(tk.Tk):
             self.modules = qr.modules
             self.draw()
             self.status.config(
-                text=f"已生成：{len(s)} 个字符，版本 V{qr.version}，"
-                     f"矩阵 {len(self.modules)}×{len(self.modules)}"
+                text=f"{len(s)} 字符 | 版本 V{qr.version} | "
+                     f"{len(self.modules)}×{len(self.modules)}"
             )
+            self.layout_and_fit()
         except Exception as e:
             messagebox.showerror("生成失败", str(e))
 
-    # ---------- 绘制（自适应画布） ----------
-    def draw(self, event=None):
+    # ---------- 绘制 ----------
+    def draw(self):
         self.canvas.delete("all")
         if not self.modules:
-            return
-
-        cw = self.canvas.winfo_width()
-        ch = self.canvas.winfo_height()
-        if cw < 10 or ch < 10:
+            self.canvas.config(width=120, height=120)
             return
 
         n = len(self.modules)
         total = n + 2 * self.quiet
+        cell = max(2, int(self.display_var.get()))
+        size = total * cell
 
-        # 用户指定的模块像素，但不超过画布可容纳的最大值
-        user_cell = max(3, int(self.display_var.get()))
-        max_cell = min(cw, ch) // total
-        cell = min(user_cell, max_cell)
-        if cell < 1:
-            cell = 1
-
-        ox = (cw - cell * total) // 2
-        oy = (ch - cell * total) // 2
+        self.canvas.config(width=size, height=size)
 
         # 白底
-        self.canvas.create_rectangle(ox, oy, ox + cell * total,
-                                     oy + cell * total, fill="white", outline="")
+        self.canvas.create_rectangle(0, 0, size, size, fill="white", outline="")
         # 黑块
         for r, row in enumerate(self.modules):
             for c, val in enumerate(row):
                 if val:
-                    x = ox + (c + self.quiet) * cell
-                    y = oy + (r + self.quiet) * cell
-                    self.canvas.create_rectangle(x, y, x + cell, y + cell,
-                                                 fill="black", outline="")
+                    x = (c + self.quiet) * cell
+                    y = (r + self.quiet) * cell
+                    self.canvas.create_rectangle(
+                        x, y, x + cell, y + cell,
+                        fill="black", outline=""
+                    )
+
+    # ---------- 精确布局 + 锁定大小 ----------
+    def layout_and_fit(self):
+        self.update_idletasks()
+
+        cw = self.canvas.winfo_width()
+        ch = self.canvas.winfo_height()
+        bw = self.toggle_btn.winfo_reqwidth()
+        bh = self.toggle_btn.winfo_reqheight()
+
+        # Canvas 固定在 (0, 0)
+        self.canvas.place(x=0, y=0)
+
+        # 按钮往 Canvas 内偏移 4 像素，更紧贴二维码
+        # 仍在静区范围内，不遮挡黑色模块
+        offset = 4
+        btn_x = max(0, cw - offset)
+        btn_y = max(0, ch - offset)
+        self.toggle_btn.place(x=btn_x, y=btn_y, anchor="nw")
+        self.toggle_btn.lift()  # 强制置顶，永不消失
+
+        if self.expanded.get():
+            # 面板放在按钮下方
+            panel_y = btn_y + bh
+            self.panel.place(x=0, y=panel_y)
+            self.panel.lift()
+            pw = self.panel.winfo_reqwidth()
+            ph = self.panel.winfo_reqheight()
+            w = max(cw, pw)
+            h = panel_y + ph
+        else:
+            self.panel.place_forget()
+            w = max(cw, btn_x + bw)
+            h = max(ch, btn_y + bh)
+
+        # 保留当前屏幕位置
+        geo = self.geometry()
+        pos = ""
+        if "+" in geo:
+            pos = "+" + geo.split("+", 1)[1]
+
+        self.geometry(f"{w}x{h}{pos}")
+        # 完全锁定窗口大小，彻底杜绝用户拉大产生的白边
+        self.minsize(w, h)
+        self.maxsize(w, h)
 
     # ---------- 保存 ----------
     def save(self):
         if not self.modules:
             return
         s = self.entry.get().strip() or "qr"
-        safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in s)[:60]
+        safe = "".join(
+            ch if ch.isalnum() or ch in "-_" else "_" for ch in s
+        )[:60]
         fn = filedialog.asksaveasfilename(
             defaultextension=".png",
             initialfile=f"{safe}.png",
@@ -182,8 +269,10 @@ class App(tk.Tk):
                     if val:
                         for dy in range(scale):
                             for dx in range(scale):
-                                px[(c + self.quiet) * scale + dx,
-                                   (r + self.quiet) * scale + dy] = 0
+                                px[
+                                    (c + self.quiet) * scale + dx,
+                                    (r + self.quiet) * scale + dy,
+                                ] = 0
             img.save(fn)
             self.status.config(text=f"已保存：{fn}")
         except Exception as e:
@@ -193,8 +282,9 @@ class App(tk.Tk):
     def clear(self):
         self.entry.delete(0, "end")
         self.modules = None
-        self.canvas.delete("all")
+        self.draw()
         self.status.config(text="已清空，请输入批次号。")
+        self.layout_and_fit()
         self.entry.focus_set()
 
 
